@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+import json
+from random import randrange
+from time import sleep
+
+from recipe_scrapers import scrape_me
+
+RECIPE_DIR = "recipes"
+CACHE_DB = "cache.txt"
+CACHE_FREQ = 10
+
+def randint():
+	return randrange(20) + 2
+
+def parseargs():
+	urlhelp = "The URL to parse"
+
+	parser = ArgumentParser()
+	parser.add_argument("url", type=str, help=urlhelp)
+	return parser.parse_args()
+
+def parserecipe(cache, url):
+	if url in cache:
+		print(f"Already parsed {url}. Skipping.")
+		return []
+
+	try:
+		data = scrape_me(url)
+		jdata = data.to_json()
+		print(jdata)
+		title = data.title()
+	except Exception as e:
+		print(f"Website probably not implemented {url}")
+		print(e)
+		return []
+
+	with open(f"{RECIPE_DIR}/{title}.json", "w") as fp:
+		json.dump(jdata, fp)
+
+	cache.append(url)
+
+	links = [x["href"] for x in data.links()]
+	links = [x for x in links if x.startswith("https://") and not x.startswith(url)]
+	links = [x for x in links if x not in cache]
+	return links
+
+
+# Start script
+args = parseargs()
+
+queue = [args.url]
+count = 0
+cache = []
+
+with open(CACHE_DB, "r") as cachefp:
+	cache = list(set(cachefp.read().split("\n")))
+
+while queue:
+	url = queue.pop(0)
+	print(f"Checking {url}")
+	links = parserecipe(cache, url)
+
+	print("Adding links to queue:")
+	print(links)
+	queue += links
+
+	count += 1
+
+	if count % CACHE_FREQ == 0:
+		with open(CACHE_DB, "w") as cachefp:
+			cachefp.write("\n".join(cache))
+
+		count = 0
+
+	sleepsecs = randint()
+	print(f"Sleeping for {sleepsecs} seconds")
+	sleep(sleepsecs)

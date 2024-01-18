@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+IMAGE=localhost/dialatedtree
+recipeDir=$PWD/recipes
+cache=$PWD/cache.txt
+
+mkdir -p "$recipeDir"
+touch "$cache"
+
+podman run \
+	--rm \
+	-v "$recipeDir/":/app/recipes/:rw \
+	-v "$cache":/app/cache.txt:rw \
+	$IMAGE $@
