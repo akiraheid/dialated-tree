@@ -5,7 +5,7 @@ import json
 from random import randrange
 from time import sleep
 
-from recipe_scrapers import scrape_me
+from recipe_scrapers import scrape_me, scraper_exists_for
 
 RECIPE_DIR = "recipes"
 CACHE_DB = "cache.txt"
@@ -21,29 +21,33 @@ def parseargs():
 	parser.add_argument("url", type=str, help=urlhelp)
 	return parser.parse_args()
 
-def parserecipe(cache, url):
-	if url in cache:
-		print(f"Already parsed {url}. Skipping.")
-		return []
+def sanitized_filename(s):
+	# Replace non-ASCII and trailing symbols 123-127
+	s = "".join([i if ord(i) < 123 else "_" for i in s])
+	# Replace non-alphanumeric
+	s = "".join(["_" if ord(i) < 48 or (ord(i) > 57 and ord(i) < 65) or (ord(i) > 90 and ord(i) < 97) else i for i in s])
+	return s
 
+def parserecipe(url):
 	try:
 		data = scrape_me(url)
 		jdata = data.to_json()
 		print(jdata)
-		title = data.title()
+		title = sanitized_filename(data.title())
 	except Exception as e:
 		print(f"Website probably not implemented {url}")
 		print(e)
+		cache.append(url)
 		return []
 
-	with open(f"{RECIPE_DIR}/{title}.json", "w") as fp:
-		json.dump(jdata, fp)
-
-	cache.append(url)
+	if data.ingredients:
+		with open(f"{RECIPE_DIR}/{title}.json", "w") as fp:
+			json.dump(jdata, fp)
 
 	links = [x["href"] for x in data.links()]
-	links = [x for x in links if x.startswith("https://") and not x.startswith(url)]
-	links = [x for x in links if x not in cache]
+	links = [x for x in links if x.startswith("https://")]
+	links = [x for x in links if scraper_exists_for(x)]
+	links = [x for x in links if not x.startswith(url)]
 	return links
 
 
@@ -59,12 +63,23 @@ with open(CACHE_DB, "r") as cachefp:
 
 while queue:
 	url = queue.pop(0)
+
+	if not scraper_exists_for(url):
+		print(f"No scraper for {url}")
+		continue
+	elif url in cache:
+		print(f"Already parsed {url}. Skipping.")
+		continue
+
 	print(f"Checking {url}")
-	links = parserecipe(cache, url)
+	links = parserecipe(url)
+	links = [x for x in links if x not in cache]
 
 	print("Adding links to queue:")
 	print(links)
 	queue += links
+
+	cache.append(url)
 
 	count += 1
 

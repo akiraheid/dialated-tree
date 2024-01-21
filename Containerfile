@@ -1,9 +1,11 @@
 FROM python:3-alpine
 
-COPY src/* /app/
-
-RUN python3 -m pip install -r /app/requirements.txt
-
 WORKDIR /app
+
+COPY ./src/requirements.txt ./
+
+RUN python3 -m pip install -r ./requirements.txt
+
+COPY src/doit ./
 
 ENTRYPOINT ["python3", "./doit"]
