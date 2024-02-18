@@ -15,6 +15,10 @@ function addToQueue(recipe) {
 	$("#queue-ul").append($recipe)
 }
 
+async function clearQueue() {
+	$("#queue-ul").empty()
+}
+
 async function getRecipe(url) {
 	return $.ajax({
 		url: url,
@@ -66,6 +70,10 @@ async function getAvailableRecipes() {
 	console.log("Parsing response")
 	$div = $("<div>").append($.parseHTML(data))
 	let lis = $div.find("li")
+
+	// Enable the next line to test a subset of available recipes
+	//lis = lis.slice(0,50)
+
 	let ret = []
 	$.each(lis, function(idx, li) {
 		const $li = $(li)
@@ -74,7 +82,8 @@ async function getAvailableRecipes() {
 		const title = $li.text().slice(0,-5)
 		ret.push({ title: title, url: url })
 	})
-	console.log(`Found ${lis.length} recipes`)
+
+	console.log(`Found ${ret.length} recipes`)
 	return ret
 }
 
@@ -85,9 +94,49 @@ async function populateQueue(items) {
 	}
 }
 
+async function keywordInRecipe(keyword, recipe) {
+	if(recipe.title.includes(keyword)) {
+		return true
+	}
+
+	for(ingredient of recipe.ingredients) {
+		if(ingredient.includes(keyword)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+async function search() {
+	clearQueue()
+	let keyword = $("#searchbar").val().toLowerCase()
+	console.log(`Searching for ${keyword}`)
+
+	if(!keyword) {
+		populateQueue(all)
+		return
+	}
+
+	for(item of all) {
+		const recipe = await getRecipe(item.url)
+		const match = await keywordInRecipe(keyword, recipe)
+		if(match) {
+			addToQueue(item)
+		}
+	}
+}
+
+async function handleSearchKeyPress(event) {
+	if(event.key == "Enter") {
+		await search()
+	}
+}
+
 // TODO Load all recipe ingredients so that it's searchable
 $(document).ready(async function() {
 	console.log("Document ready")
-	const items = await getAvailableRecipes()
-	await populateQueue(items)
+	clearQueue()
+	all = await getAvailableRecipes()
+	await populateQueue(all)
 })
