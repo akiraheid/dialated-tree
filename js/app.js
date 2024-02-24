@@ -59,7 +59,7 @@ function showRecipe(recipe) {
 	$("#directions").html(html)
 }
 
-async function getAvailableRecipes() {
+async function loadAvailableRecipes() {
 	console.log("Retrieving recipes")
 	const data = await $.ajax({
 		url: "/recipes",
@@ -72,19 +72,19 @@ async function getAvailableRecipes() {
 	let lis = $div.find("li")
 
 	// Enable the next line to test a subset of available recipes
-	//lis = lis.slice(0,50)
+	//lis = lis.slice(0,50) // DISABLE WHEN DONE TESTING
 
-	let ret = []
 	$.each(lis, function(idx, li) {
 		const $li = $(li)
 		const $a = $($li.find("a")[0])
 		const url = `/recipes/${$a.attr("href")}`
 		const title = $li.text().slice(0,-5)
-		ret.push({ title: title, url: url })
+		item = { title: title, url: url }
+		all.push(item)
+		addToQueue(item)
 	})
 
-	console.log(`Found ${ret.length} recipes`)
-	return ret
+	console.log(`Found ${all.length} recipes`)
 }
 
 async function populateQueue(items) {
@@ -94,16 +94,17 @@ async function populateQueue(items) {
 	}
 }
 
+// keyword is already lowercase
 async function keywordInRecipe(keyword, recipe) {
-	if(recipe.title.includes(keyword)) {
+	if(recipe.title.toLowerCase().includes(keyword)) {
 		return true
 	}
 
-	for(ingredient of recipe.ingredients) {
-		if(ingredient.includes(keyword)) {
-			return true
-		}
-	}
+	//for(ingredient of recipe.ingredients) {
+	//	if(ingredient.includes(keyword)) {
+	//		return true
+	//	}
+	//}
 
 	return false
 }
@@ -111,20 +112,23 @@ async function keywordInRecipe(keyword, recipe) {
 async function search() {
 	clearQueue()
 	let keyword = $("#searchbar").val().toLowerCase()
-	console.log(`Searching for ${keyword}`)
 
+	console.log("Showing all recipes")
 	if(!keyword) {
 		populateQueue(all)
 		return
 	}
 
+	console.log(`Searching for ${keyword}`)
+	let i = 0
 	for(item of all) {
-		const recipe = await getRecipe(item.url)
-		const match = await keywordInRecipe(keyword, recipe)
+		const match = await keywordInRecipe(keyword, item)
 		if(match) {
 			addToQueue(item)
+			i += 1
 		}
 	}
+	console.log(`Found ${i} recipes with keyword ${keyword}`)
 }
 
 async function handleSearchKeyPress(event) {
@@ -137,6 +141,5 @@ async function handleSearchKeyPress(event) {
 $(document).ready(async function() {
 	console.log("Document ready")
 	clearQueue()
-	all = await getAvailableRecipes()
-	await populateQueue(all)
+	await loadAvailableRecipes()
 })
