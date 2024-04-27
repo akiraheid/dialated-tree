@@ -1,0 +1,55 @@
+#!/bin/bash
+
+app=grocycli
+image=localhost/${app}:latest
+
+if [ -z "$GROCY_API_KEY" ]; then
+	echo "Please define GROCY_API_KEY environment variable"
+	_err=1
+fi
+if [ -z "$GROCY_PORT" ]; then
+	echo "Please define GROCY_PORT environment variable"
+	_err=1
+fi
+if [ -z "$GROCY_URL" ]; then
+	echo "Please define GROCY_URL environment variable"
+	_err=1
+fi
+if [ -n "$_err" ]; then
+	exit "$_err"
+fi
+
+# Arguments for the run command
+hargs=("-it" "--name" "${app}-$(uuidgen)" "--network" "host" "--rm")
+hargs+=("-e" "GROCY_API_KEY=$GROCY_API_KEY" "-e" "GROCY_PORT=$GROCY_PORT")
+hargs+=("-e" "GROCY_URL=$GROCY_URL")
+
+# Arguments for the container entrypoint
+cargs=()
+
+cdatadir=/app
+for token in "${@}"; do
+	if [ -f "$token" ]; then
+		hpath=$(readlink -f "${token}")
+
+		# Remove leading slash
+		noleading=$(echo "${hpath}" | cut -c2-)
+		cpath=${cdatadir}/${noleading}
+
+		hargs+=("--volume" "${hpath}:${cpath}:rw")
+		cargs+=("${cpath}")
+	elif [ -d "$token" ]; then
+		hpath=$(readlink -f "${token}")
+
+		# Remove leading slash
+		noleading=$(echo "${hpath}" | cut -c2-)
+		cpath=${cdatadir}/${noleading}
+
+		hargs+=("--volume" "${hpath}/:${cpath}/:rw")
+		cargs+=("${cpath}")
+	else
+		cargs+=("${token}")
+	fi
+done
+
+podman run "${hargs[@]}" $image "${cargs[@]}"
