@@ -24,6 +24,7 @@ grocy = None
 unit_nicknames = {
         ' c ': 'cup',
         'cup': 'cup',
+        'dash': 'gram',
         'floz': 'fluid ounce',
         'fluid ounce': 'fluid ounce',
         ' g ': 'gram',
@@ -31,6 +32,7 @@ unit_nicknames = {
         'gal': 'gallon',
         'gallon': 'gallon',
         ' l ': 'liter',
+        'large': 'count',
         'liter': 'liter',
         'lb': 'pound',
         'ml': 'milliliter',
@@ -51,22 +53,34 @@ product_nicknames = {
         'all-purpose flour': ['flour', None],
         'ap flour': ['flour', None],
         'boiled or steamed spinach': ['spinach', 'boiled or steamed'],
-        'bread flour': ['flour', None],
         'butter': ['unsalted butter', None],
         'dry yeast': ['active dry yeast', None],
+        'kosher salt': ['salt', 'kosher'],
         'lukewarm water': ['water', 'lukewarm'],
         'melted butter': ['unsalted butter', 'melted'],
         'milk': ['whole milk', None],
+        'russet potatoes': ['russet potato', None],
         'softened butter': ['unsalted butter', 'softened'],
+        'warm water': ['water', 'warm'],
         'whole wheat flour': ['wheat flour', None],
+        'unbleached all-purpose flour': ['flour', 'unbleached'],
         'yeast': ['active dry yeast', None],
         }
 
+# Sometimes the ingredient specifies the preparation before the product
+prep_verbs = [
+        'chopped',
+        'diced',
+        'freshly ground',
+        'freshly squeezed',
+        'large',
+        ]
+
 money_pat = re.compile(r'\(\$\d+\.\d\d\)')
 fraction = r'\d+/\d+'
-amount_pat = r'(?P<amount>\d+|\d* ?' + fraction + ')'
+amount_pat = r'(?P<amount>\d+(?:\.\d+)?|\d* ?' + fraction + ')'
 unit_pat = f'(?P<unit>{"|".join(unit_nicknames)})'
-product_pat = r'(?P<product>[\w\s]*\w+)'
+product_pat = r'(?P<product>[\w\s-]*\w+)'
 note_pat = r'(?P<note>(?:,[\s\w]+)|\([\w\s]+\))*'
 full_pat = amount_pat + r'\s+' + unit_pat + r's?\s+' + product_pat + r'\s*' + note_pat
 ingredient_pat = re.compile(full_pat)
@@ -215,6 +229,7 @@ def get_similar_products(text, ratio=0.5):
         if similarity > ratio:
             ret.append([x.name, x.id, similarity])
 
+    sorted(ret, key=lambda x: x[2])
     return ret
 
 def interactive_get_uint(msg='Enter a positive integer: '):
@@ -351,6 +366,9 @@ def guess_ingredient(ingredient):
     return (productid, unitid, amount, note)
 
 def parse_ingredient(ingredient):
+    if 'cooking spray' == ingredient.lower():
+        ingredient = '1 tbsp olive oil'
+
     amatch = ingredient_pat.match(ingredient)
 
     if not amatch:
@@ -358,16 +376,48 @@ def parse_ingredient(ingredient):
 
     print(amatch.groups())
 
+    unit = amatch.group('unit')
     amount = parse_amount(amatch.group('amount'))
-    unitid = grocy.units.get(amatch.group('unit'))
+    unitid = grocy.units.get(unit)
     note = amatch.group('note')
+    notes = []
+    if note and note.startswith(', '):
+        notes = note[2:]
+
+    notes = [notes] if notes else []
 
     product = amatch.group('product')
+
+    # Sanitize product in case ingredient specifies prep in product name
+    parts = product.split(' ')
+    for idx in range(len(parts)):
+        verb_guess = ' '.join(parts[:idx])
+        if verb_guess in prep_verbs:
+            notes.append(verb_guess)
+            product = ' '.join(parts[idx:])
+            print('Found prep info in product name.')
+            print(f'New product: {product}')
+            print(f'notes: {notes}')
+            break
+
     productid = grocy.productiddict.get(product)
     if not productid:
         info = product_nicknames.get(product)
         productid = grocy.productiddict.get(info[0]) if info else None
-        note = info[1] if info else None
+        if info and info[1]:
+            notes.append(info[1])
+
+    if not productid:
+        similars = get_similar_products(product, ratio=0.7)
+        if similars:
+            info = similars[0]
+            productid = info[1]
+            print(f'Similarity of best match "{info[0]}": {info[2]}')
+
+    if not unitid:
+        unitid = grocy.units.get(unit_nicknames.get(unit))
+
+    note = ', '.join(notes) if notes else None
 
     print(f'productid: {productid}')
     print(f'amount: {amount}')
@@ -403,8 +453,6 @@ def process_ingredient(ingredient):
         if not productid:
             productid = interactive_make_product(name)
 
-    print(f'Product ID: {productid}')
-
     if not unitid:
         print(f'\nCould not parse unit from "{ingredient}"')
         if auto:
@@ -427,6 +475,8 @@ def process_ingredient(ingredient):
 
 def add_recipe(args):
     file = args.file
+
+    print(f'Adding recipe from file "{file}"')
 
     data = None
     with open(file, 'r') as fp:

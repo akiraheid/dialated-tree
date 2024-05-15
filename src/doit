@@ -42,7 +42,7 @@ def parserecipe(url):
 
 	if data.ingredients:
 		with open(f"{RECIPE_DIR}/{title}.json", "w") as fp:
-			json.dump(jdata, fp)
+			json.dump(jdata, fp, indent=4)
 
 	links = [x["href"] for x in data.links()]
 	links = [x for x in links if x.startswith("https://")]

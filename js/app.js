@@ -30,10 +30,21 @@ async function getRecipe(url) {
 	})
 }
 
+function clearModal() {
+	$("#modalTitle").text("")
+	$("#modalBody").empty()
+}
+
+function showModal(recipe) {
+	clearModal()
+}
+
 function showRecipe(recipe) {
 	console.log("Got recipe")
 	console.log(recipe)
 	$("#title").text(recipe.title)
+	$("#grocy-btn").on("click", recipe, showModal)
+	$("#grocy-btn").removeClass("invisible")
 	$("#source").html(`<span>From: <a href=${recipe.canonical_url}>${recipe.author}</a></span>`)
 
 	const ingredientGroups = recipe.ingredient_groups
