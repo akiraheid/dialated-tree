@@ -23,8 +23,10 @@ headers = {'GROCY-API-KEY': api_key,
 grocy = None
 unit_nicknames = {
         ' c ': 'cup',
+        'clove': 'teaspoon',
         'cup': 'cup',
         'dash': 'gram',
+        'dashes': 'gram',
         'floz': 'fluid ounce',
         'fluid ounce': 'fluid ounce',
         ' g ': 'gram',
@@ -32,12 +34,12 @@ unit_nicknames = {
         'gal': 'gallon',
         'gallon': 'gallon',
         ' l ': 'liter',
-        'large': 'count',
         'liter': 'liter',
         'lb': 'pound',
         'ml': 'milliliter',
         'oz': 'ounce',
         'ounce': 'ounce',
+        'pinch': 'ounce',
         'pound': 'pound',
         'qt': 'quart',
         'quart': 'quart',
@@ -51,10 +53,14 @@ unit_nicknames = {
 product_nicknames = {
         'all purpose flour': ['flour', None],
         'all-purpose flour': ['flour', None],
+        'allpurpose flour': ['flour', None],
         'ap flour': ['flour', None],
         'boiled or steamed spinach': ['spinach', 'boiled or steamed'],
         'butter': ['unsalted butter', None],
-        'dry yeast': ['active dry yeast', None],
+        'cinnamon': ['ground cinnamon', None],
+        'garbanzo beans': ['chickpea', None],
+        'garlic cloves': ['garlic', None],
+        'granulated sugar': ['sugar', None],
         'kosher salt': ['salt', 'kosher'],
         'lukewarm water': ['water', 'lukewarm'],
         'melted butter': ['unsalted butter', 'melted'],
@@ -73,18 +79,85 @@ prep_verbs = [
         'diced',
         'freshly ground',
         'freshly squeezed',
+        'grated',
         'large',
+        'ripe',
+        'smooth',
         ]
 
 money_pat = re.compile(r'\(\$\d+\.\d\d\)')
-fraction = r'\d+/\d+'
-amount_pat = r'(?P<amount>\d+(?:\.\d+)?|\d* ?' + fraction + ')'
-unit_pat = f'(?P<unit>{"|".join(unit_nicknames)})'
+amount_pat = r'(?P<amount>\d+ to \d+|\d+\s?-\s?\d+|\d* ?\d+/\d+|\d+(?:\.\d+)?)'
+unit_pat = f'(?P<unit>{"|".join(unit_nicknames)})?'
 product_pat = r'(?P<product>[\w\s-]*\w+)'
-note_pat = r'(?P<note>(?:,[\s\w]+)|\([\w\s]+\))*'
-full_pat = amount_pat + r'\s+' + unit_pat + r's?\s+' + product_pat + r'\s*' + note_pat
+note_pat = r'(?P<note>,\s+[\s\w]+|\([\w\s]+\))*'
+full_pat = amount_pat + r'\s+' + unit_pat + r's?\s*' + product_pat + r'\s*' \
+        + note_pat
 ingredient_pat = re.compile(full_pat)
+can_pat = re.compile(r'\d+\s+\(\s*' + amount_pat + r'\s+' + unit_pat \
+        + r's?\s*\)\s+can\s+' + product_pat + r'\s*' + note_pat)
+can_pat2 = re.compile(r'\d+\s+' + amount_pat + r'\s*' + unit_pat \
+        + r'\s*\.\s+can\s+' + product_pat + r'\s*' + note_pat)
 auto = False
+
+#class IngredientParser():
+#
+#    def __init__(self):
+#        amount_pat = r''
+#        unit_pat = r''
+#        product_pat = r'(?P<product>[\w\s-]*\w+)'
+#        note_pat = r'(?P<note>,\s+[\s\w]+|\([\w\s]+\))*'
+#        full_pat = amount_pat + r'\s+' + unit_pat + r's?\s*' + product_pat\
+#                + r'\s*' + note_pat
+#
+#        self.ingredient_pat = re.compile(pat)
+#
+#    def translate(self, ingredient):
+#        """Translate ingredient from a known, unparsable ingredient to a
+#        useful ingredient."""
+#        if 'cooking spray' == ingredient.lower():
+#            return '1 tbsp olive oil'
+#
+#        return ingredient
+#
+#    def parse_amount(self, string):
+#        """Parse a number from a string."""
+#        if ' to ' in string:
+#            amount = amount.split(' to ')[0].strip()
+#        elif '-' in amount:
+#            amount = amount.split('-')[0].strip()
+#
+#        # Handle integers, decimals, and fractions
+#        print(f'parse_amount(): {part}')
+#        try:
+#            return int(part)
+#        except ValueError:
+#            try:
+#                return float(part)
+#            except ValueError:
+#                try:
+#                    # Might be a fraction
+#                    parts = part.split(' ')
+#
+#                    if '/' in parts[0]:
+#                        whole = 0
+#                        fraction_parts = parts[0].split('/')
+#                    else:
+#                        whole = float(parts[0])
+#                        fraction_parts = parts[1].split('/')
+#
+#                    print(f'whole: {whole}')
+#                    print(f'fraction_parts: {fraction_parts}')
+#                    decimal = int(fraction_parts[0]) / int(fraction_parts[1])
+#                    return whole + decimal
+#                except Exception as e:
+#                    return None
+#
+#    def parse(self, ingredient):
+#        ingredient = translate(ingredient)
+#
+#        amatch = self.ingredient_pat.match(ingredient)
+#        if not amatch:
+#            return (None, None, None, None)
 
 class GrocyApi():
 
@@ -106,6 +179,12 @@ class GrocyApi():
     def all_products(self):
         return self.grocy.all_products()
 
+    def delete(self, url):
+        req = Request(url=url, headers=headers, method='DELETE')
+        with urlopen(req) as f:
+            ret = f.read().decode('utf-8')
+            return json.loads(ret if ret else '{}')
+
     def get(self, url):
         req = Request(url=url, method='GET')
         with urlopen(req) as f:
@@ -123,7 +202,7 @@ class GrocyApi():
         except HTTPError as e:
             print(e.code)
             print(e.read())
-            exit(1)
+            raise e
 
     def post_recipe(self, name, description, servings):
         data = {
@@ -163,6 +242,9 @@ class GrocyApi():
 
         res = self.post(f'{self.url}:{self.port}/api/objects/recipes_pos', data=data)
         return res.get('created_object_id')
+
+    def delete_recipe(self, recipeid):
+        return self.delete(f'{self.url}:{self.port}/api/objects/recipes/{recipeid}')
 
 def get(url):
     req = Request(url=url, headers=headers, method='GET')
@@ -327,6 +409,9 @@ def sanitize_ingredient(ingredient):
         ingredient = ingredient.replace(amatch[0], '').strip()
         print(f'Removed {amatch[0]}')
 
+    # Remove any extra characters
+    ingredient = re.sub(r'[^\w\s\./]', '', ingredient)
+
     return ingredient
 
 def parse_product(text):
@@ -366,27 +451,48 @@ def guess_ingredient(ingredient):
     return (productid, unitid, amount, note)
 
 def parse_ingredient(ingredient):
-    if 'cooking spray' == ingredient.lower():
+    print(f'Parsing {ingredient}')
+    if ingredient.lower().startswith('handful'):
+        ingredient = '1/2 cup ' + ingredient[7:].strip()
+
+    if ingredient.lower() == 'cooking spray':
         ingredient = '1 tbsp olive oil'
 
-    amatch = ingredient_pat.match(ingredient)
+    amatch = can_pat2.match(ingredient)
+
+    if not amatch:
+        amatch = can_pat.match(ingredient)
+
+    if not amatch:
+        amatch = ingredient_pat.match(ingredient)
 
     if not amatch:
         return (None, None, None, None)
 
     print(amatch.groups())
 
-    unit = amatch.group('unit')
-    amount = parse_amount(amatch.group('amount'))
-    unitid = grocy.units.get(unit)
+    amount = amatch.group('amount')
+    unit = amatch.group('unit') or 'count'
+    product = amatch.group('product')
     note = amatch.group('note')
+
+    if ' to ' in amount:
+        amount = amount.split(' to ')[0].strip()
+    elif '-' in amount:
+        amount = amount.split('-')[0].strip()
+
+    amount = parse_amount(amount)
+
+    unitid = grocy.units.get(unit)
+    if not unitid:
+        unit = unit_nicknames.get(unit) if unit else unit
+        unitid = grocy.units.get(unit)
+
     notes = []
     if note and note.startswith(', '):
         notes = note[2:]
 
     notes = [notes] if notes else []
-
-    product = amatch.group('product')
 
     # Sanitize product in case ingredient specifies prep in product name
     parts = product.split(' ')
@@ -396,14 +502,18 @@ def parse_ingredient(ingredient):
             notes.append(verb_guess)
             product = ' '.join(parts[idx:])
             print('Found prep info in product name.')
-            print(f'New product: {product}')
+            print(f'product: {product}')
             print(f'notes: {notes}')
             break
+
+    if product.lower().startswith('fresh'):
+        product = product[5:].strip()
 
     productid = grocy.productiddict.get(product)
     if not productid:
         info = product_nicknames.get(product)
-        productid = grocy.productiddict.get(info[0]) if info else None
+        product = info[0] if info else product
+        productid = grocy.productiddict.get(product)
         if info and info[1]:
             notes.append(info[1])
 
@@ -414,14 +524,15 @@ def parse_ingredient(ingredient):
             productid = info[1]
             print(f'Similarity of best match "{info[0]}": {info[2]}')
 
-    if not unitid:
-        unitid = grocy.units.get(unit_nicknames.get(unit))
+    if product == 'garlic' and unit == 'count':
+        unit = 'teaspoon'
+        unitid = grocy.units.get(unit)
 
     note = ', '.join(notes) if notes else None
 
-    print(f'productid: {productid}')
+    print(f'productid: {productid} ({product})')
     print(f'amount: {amount}')
-    print(f'unitid: {unitid}')
+    print(f'unitid: {unitid} ({unit})')
     print(f'note: {note}')
 
     return (productid, unitid, amount, note)
@@ -484,6 +595,11 @@ def add_recipe(args):
 
     (recipe_name, description, servings) = process_recipe(data)
 
+    groups = data.get('ingredient_groups')
+    if not groups:
+        print('No ingredients found. Nothing to upload.')
+        exit(1)
+
     ingredient_groups = {}
     for group in data.get('ingredient_groups'):
         group_name = group.get('purpose')
@@ -495,10 +611,20 @@ def add_recipe(args):
 
         ingredient_groups[group_name] = info
 
+    print(f'Uploading recipe "{recipe_name}"')
     recipeid = grocy.post_recipe(recipe_name, description=description, servings=servings)
     for group in ingredient_groups:
         for (productid, unitid, amount, note) in ingredient_groups[group]:
-            grocy.add_ingredient_to_recipe(recipeid, productid, unitid, amount, group_name, note=note)
+            print(f'Uploading ingredient "{productid}"')
+            try:
+                grocy.add_ingredient_to_recipe(recipeid, productid, unitid, amount, group_name, note=note)
+            except Exception:
+                print('Error: Failed to add ingredient. Deleting incomplete recipe.')
+                grocy.delete_recipe(recipeid)
+                exit(1)
+
+    print('Uploaded successfully.')
+
 
 def parseargs():
     parser = ArgumentParser(description='A CLI interface for Grocy.')
